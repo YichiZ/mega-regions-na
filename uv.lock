@@ -97,21 +97,25 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "geopandas" },
+    { name = "numpy" },
     { name = "pandas" },
     { name = "pillow" },
     { name = "rasterio" },
     { name = "scikit-image" },
     { name = "scipy" },
+    { name = "shapely" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "geopandas", specifier = ">=1.2.0" },
+    { name = "numpy", specifier = ">=2.5.4" },
     { name = "pandas", specifier = ">=3.1.1" },
     { name = "pillow", specifier = ">=13.0.0" },
     { name = "rasterio", specifier = ">=1.5.2" },
     { name = "scikit-image", specifier = ">=0.26.0" },
     { name = "scipy", specifier = ">=1.18.1" },
+    { name = "shapely", specifier = ">=2.2.0" },
 ]
 
 [[package]]

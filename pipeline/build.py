@@ -4,6 +4,7 @@
   uv run python pipeline/build.py --sweep  # print the threshold sweep and exit
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -37,6 +38,7 @@ MIN_MEGA_POP = 4_000_000
 MEMBER_SHARE = 0.5  # a metro belongs where at least half of its gridded residents live
 CIRCLE_MIN_POP = 250_000
 GLOW_MIN, GLOW_FULL = 300, 4000  # residents per km2: glow starts / saturates
+GLOW_BLOCK = 2  # glow.png is stored at 2 km: the 1 km image decodes to ~90 MB, too much for phones
 IN_SCOPE = ("USA", "CAN")
 YEAR = "2025"
 
@@ -57,15 +59,17 @@ NAME_RULES = [
     ({"New York", "Chicago"}, "Northeast–Great Lakes"),
     ({"Los Angeles", "San Francisco"}, "California"),
     ({"Miami", "New Orleans"}, "Florida–Gulf Coast"),
-    ({"Dallas", "San Antonio"}, "Texas I-35 Corridor"),
+    ({"Dallas", "San Antonio"}, "Dallas–San Antonio"),
     ({"Montréal", "Ottawa"}, "St. Lawrence Valley"),
     ({"Phoenix", "Tucson"}, "Sun Corridor"),
     ({"New Orleans"}, "Gulf Coast"),
+    ({"Chicago", "Detroit", "Cincinnati"}, "Great Lakes–Ohio Valley"),
     ({"Chicago", "Detroit"}, "Great Lakes"),
+    ({"Chicago", "Grand Rapids"}, "Lake Michigan"),
     ({"Atlanta", "Charlotte"}, "Piedmont Atlantic"),
+    ({"Atlanta", "Knoxville"}, "Atlanta–East Tennessee"),
     ({"Pittsburgh", "Cincinnati"}, "Ohio Valley"),
     ({"Toronto", "Rochester"}, "Lake Ontario"),
-    ({"Minneapolis"}, "Twin Cities"),
     ({"New York", "Boston", "Washington"}, "Northeast Corridor"),
     ({"New York", "Washington"}, "New York–Washington"),
     ({"New York"}, "New York–Philadelphia"),
@@ -88,14 +92,16 @@ NAME_RULES = [
     ({"Phoenix"}, "Greater Phoenix"),
     ({"Montréal"}, "Greater Montréal"),
     ({"Denver"}, "Front Range"),
+    ({"Minneapolis"}, "Twin Cities"),
 ]
 UNSPLIT = {"Winston-Salem"}
+PROVINCE_PART = re.compile(r"\s*\(.*\)")  # StatCan suffix on metros that straddle a provincial border
 
 
 def short_name(name: str, country: str) -> str:
     head = name.split(",")[0]
     if country == "CAN":
-        return head.split(" - ")[0]
+        return head.split(" - ")[0].split(" / ")[0]
     first = head.split("--")[0]
     return next((u for u in UNSPLIT if first.startswith(u)), first.split("-")[0])
 
@@ -122,9 +128,9 @@ def countries() -> gpd.GeoDataFrame:
 
 
 def country_mask() -> np.ndarray:
-    """True for cells that are not in a foreign country (keeps coastal cells the border file misses)."""
+    """True for cells whose centre is not in a foreign country (keeps coastal cells the border file misses)."""
     foreign = countries().query("ADM0_A3 not in @IN_SCOPE").to_crs(CRS).clip(FRAME)
-    return features.rasterize(foreign.geometry, out_shape=(H, W), transform=TRANSFORM, all_touched=True) == 0
+    return features.rasterize(foreign.geometry, out_shape=(H, W), transform=TRANSFORM) == 0
 
 
 def land_mask() -> np.ndarray:
@@ -147,7 +153,7 @@ def load_metros() -> gpd.GeoDataFrame:
     ca = gpd.read_file(RAW / "statcan_cma_2021.geojson")
     ca = ca.set_geometry(ca.geometry.make_valid())  # the service's simplification leaves self-intersections
     ca = ca.dissolve("CMAUID", as_index=False).merge(ca_pop, on="CMAUID")
-    ca = ca.assign(key="CA" + ca.CMAUID, full=ca.CMANAME, country="CAN")
+    ca = ca.assign(key="CA" + ca.CMAUID, full=ca.CMANAME.str.replace(PROVINCE_PART, "", regex=True), country="CAN")
 
     cols = ["key", "full", "country", "pop", "geometry"]
     metros = pd.concat([us[cols].to_crs(CRS), ca[cols].to_crs(CRS)], ignore_index=True)
@@ -269,9 +275,10 @@ def basemap() -> dict:
 
 
 def write_glow(pop) -> None:
+    pop = pop.reshape(H // GLOW_BLOCK, GLOW_BLOCK, W // GLOW_BLOCK, GLOW_BLOCK).max(axis=(1, 3))  # keep the densest cell
     t = np.clip((pop - GLOW_MIN) / (GLOW_FULL - GLOW_MIN), 0, 1)
     alpha = np.where(pop >= GLOW_MIN, 130 + 125 * np.sqrt(t), 0).astype("uint8")
-    Image.merge("LA", [Image.new("L", (W, H), 255), Image.fromarray(alpha)]).save(SITE / "glow.png", optimize=True)
+    Image.merge("LA", [Image.new("L", alpha.shape[::-1], 255), Image.fromarray(alpha)]).save(SITE / "glow.png", optimize=True)
 
 
 def totals() -> dict:
