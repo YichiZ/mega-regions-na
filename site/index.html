@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Megaregions of the United States &amp; Canada</title>
+<style>
+  :root { --sea: #a9cfe6; --land: #cdd1cd; --land-out: #e6e8e4; --ink: #1c2530; --muted: #66707c; --line: #d9dde2; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif; color: var(--ink); background: var(--sea); display: flex; }
+  #panel { width: 380px; flex: none; margin: 16px; padding: 20px 22px; background: #fff; border-radius: 10px; box-shadow: 0 2px 14px rgba(20, 40, 60, .18); overflow-y: auto; }
+  #map { flex: 1; min-width: 0; height: 100%; display: block; cursor: grab; }
+  #map:active { cursor: grabbing; }
+  h1 { font-size: 23px; line-height: 1.15; margin: 0 0 6px; letter-spacing: -.01em; }
+  .lede { color: var(--muted); margin: 0 0 14px; }
+  .toggle { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 4px; }
+  .toggle small { display: block; font-size: 10px; opacity: .75; }
+  .hint { font-size: 11.5px; color: var(--muted); margin: 0 0 14px; }
+  .toggle button { flex: 0 0 20%; padding: 6px 2px; border: 0; background: #fff; font: inherit; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  .toggle button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .toggle button:focus-visible { outline: 2px solid #2f6fde; outline-offset: -2px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+  .stat b { display: block; font-size: 22px; letter-spacing: -.02em; }
+  .stat span { font-size: 11.5px; color: var(--muted); line-height: 1.25; display: block; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 16px 0 8px; }
+  .bar { padding: 3px 0; cursor: default; }
+  .bar .top { display: flex; justify-content: space-between; font-weight: 600; font-size: 13px; }
+  .bar .track { height: 7px; border-radius: 4px; margin: 2px 0; }
+  .bar .sub { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .legend { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; font-size: 12px; }
+  .legend svg { display: block; }
+  .note { font-size: 11.5px; color: var(--muted); }
+  .note p { margin: 0 0 6px; }
+  .region { fill-opacity: .42; stroke-width: 1.4; vector-effect: non-scaling-stroke; fill-rule: evenodd; transition: fill-opacity .15s; }
+  .metro { fill: rgba(255, 255, 255, .55); vector-effect: non-scaling-stroke; stroke-width: 2; }
+  .dim .region:not(.hot) { fill-opacity: .1; }
+  .dim .metro:not(.hot) { opacity: .25; }
+  .label rect { fill: #fff; stroke: rgba(0, 0, 0, .12); }
+  .label text { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-anchor: middle; }
+  .label .pop { font-weight: 500; fill: var(--ink); letter-spacing: 0; }
+  #tip { position: fixed; pointer-events: none; background: #fff; border-radius: 6px; padding: 7px 10px; font-size: 12.5px; box-shadow: 0 2px 10px rgba(0, 0, 0, .25); max-width: 280px; display: none; z-index: 5; }
+  #tip b { display: block; }
+  #tip span { color: var(--muted); }
+  #error { padding: 40px; }
+  @media (max-width: 820px) {
+    body { flex-direction: column; }
+    #panel { width: auto; margin: 10px; overflow: visible; }
+    #map { height: 70vh; flex: none; }
+  }
+</style>
+</head>
+<body>
+<aside id="panel">
+  <h1>Megaregions of the United States &amp; Canada</h1>
+  <p class="lede">Continuous belts of dense settlement whose metro areas together hold at least 4 million people.</p>
+  <div class="toggle" role="group" aria-label="Density thresholds" id="toggle"></div>
+  <p class="hint">Core / extension density in residents per km². Lower values merge more of the country into each region.</p>
+  <div class="stats" id="stats"></div>
+  <h2>Metro-area residents by megaregion</h2>
+  <div id="bars"></div>
+  <h2>Legend</h2>
+  <div class="legend" id="legend"></div>
+  <h2>Method</h2>
+  <div class="note" id="method"></div>
+</aside>
+<svg id="map" viewBox="0 60 1160 720" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Map of megaregions in the United States and Canada"></svg>
+<div id="tip" role="status"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+const KM_PER_UNIT = 5;
+const SIZE_CLASSES = [[6e6, 13, "6 million and over"], [3e6, 9, "3 to 6 million"], [1e6, 5.5, "1 to 3 million"], [0, 3.2, "250,000 to 1 million"]];
+const GREY = "#8a9099";
+// Colour follows a megaregion's largest metro, so a region keeps its colour across threshold sets.
+const COLORS = {
+  "New York": "#d1495b", "Los Angeles": "#e07b00", "Miami": "#0a9396", "San Francisco": "#7b4fc4", "Toronto": "#c2255c",
+  "Chicago": "#2a6fdb", "Charlotte": "#5c940d", "Seattle": "#1b7f5c", "Dallas": "#b3541e", "Houston": "#8f5a00",
+  "Atlanta": "#c2410c", "Detroit": "#3b5bdb", "San Antonio": "#a61e4d", "Phoenix": "#d9480f", "Montréal": "#6741d9",
+  "Denver": "#0b7285", "Pittsburgh": "#74640a", "New Orleans": "#2b8a3e", "Minneapolis": "#9c36b5", "Washington": "#087f5b", "Boston": "#364fc7", "Tampa": "#0a9396",
+};
+// Which side of its megaregion a label sits on (default: north), chosen to land on sea or empty land.
+const LABEL_SIDE = {
+  "New York": "e", "Boston": "e", "Miami": "e", "Houston": "e", "Phoenix": "e", "Washington": "w", "Tampa": "w",
+  "Los Angeles": "s", "San Francisco": "e", "Seattle": "w", "Chicago": "w", "San Antonio": "w", "Atlanta": "s", "Detroit": "s",
+};
+const fmtM = n => (n / 1e6).toFixed(1) + "M";
+const fmtPct = x => (x * 100).toFixed(x < 0.1 ? 1 : 0) + "%";
+const radius = pop => SIZE_CLASSES.find(c => pop >= c[0])[1];
+
+const svg = d3.select("#map"), tip = d3.select("#tip");
+const root = svg.append("g");
+const layers = Object.fromEntries(["base", "regions", "glow", "metros", "labels"].map(n => [n, root.append("g")]));
+let zoomK = 1;
+
+d3.json("data.json").then(init).catch(err => {
+  console.error(err);
+  document.body.innerHTML = '<p id="error">Could not load the map data. Run <code>uv run python pipeline/build.py</code>, then serve the <code>site/</code> folder over HTTP.</p>';
+});
+
+function init(data) {
+  const [x0, , , y1] = data.frame_km;
+  const path = d3.geoPath(d3.geoTransform({ point(x, y) { this.stream.point((x - x0) / KM_PER_UNIT, (y1 - y) / KM_PER_UNIT); } }));
+  const px = m => [(m.x - x0) / KM_PER_UNIT, (y1 - m.y) / KM_PER_UNIT];
+  const metroByKey = new Map(data.metros.map(m => [m.key, m]));
+  const circles = data.metros.filter(m => m.pop >= data.method.circle_min_pop).sort((a, b) => b.pop - a.pop);
+
+  const draw = (layer, shapes, fill, stroke) => layer.append("g").selectAll("path").data(shapes).join("path")
+    .attr("d", path).attr("fill", fill).attr("stroke", stroke).attr("stroke-width", .6).attr("vector-effect", "non-scaling-stroke");
+  draw(layers.base, data.base.others, "var(--land-out)", "#fff");
+  draw(layers.base, data.base.states, "var(--land)", "#fff");
+  layers.glow.append("image").attr("href", "glow.png").attr("width", 1160).attr("height", 780).attr("preserveAspectRatio", "none").style("pointer-events", "none");
+
+  svg.call(d3.zoom().scaleExtent([1, 12]).translateExtent([[0, 60], [1160, 780]]).on("zoom", e => {
+    zoomK = e.transform.k;
+    root.attr("transform", e.transform);
+    layers.metros.selectAll("circle").attr("r", d => radius(d.pop) / zoomK);
+    layers.labels.selectAll("g.label").attr("transform", d => `translate(${d.at}) scale(${1 / zoomK})`);
+  }));
+
+  d3.select("#toggle").selectAll("button").data(Object.entries(data.variants)).join("button")
+    .attr("title", ([, v]) => `Cores above ${v.core}/km², extended to ${v.ext}/km²`)
+    .html(([key, v]) => `${key}<small>${v.label || "&nbsp;"}</small>`)
+    .on("click", (e, [key]) => show(key));
+  renderLegend(data);
+  show(data.default_variant);
+
+  function show(key) {
+    const v = data.variants[key];
+    d3.selectAll("#toggle button").attr("aria-pressed", ([k]) => k === key);
+    const regions = v.regions.map((r, i) => {
+      const members = r.metros.map(k => metroByKey.get(k));
+      return { ...r, id: i, members, color: COLORS[members[0].name] || d3.schemeTableau10[i % 10] };
+    });
+    const regionOf = new Map(regions.flatMap(r => r.metros.map(k => [k, r])));
+    const highlight = id => {
+      root.classed("dim", id != null);
+      root.selectAll(".region, .metro").classed("hot", d => (d.members ? d.id : regionOf.get(d.key)?.id) === id);
+    };
+
+    layers.regions.selectAll("path").data(regions).join("path").attr("class", "region")
+      .attr("d", d => path(d.geometry)).attr("fill", d => d.color).attr("stroke", d => d.color)
+      .on("mousemove", (e, d) => tooltip(e, d.name, `${fmtM(d.pop)} in ${d.members.length} metro areas<br>${d.area_km2.toLocaleString()} km² · ${d.members.slice(0, 5).map(m => m.name).join(", ")}`))
+      .on("mouseenter", (e, d) => highlight(d.id)).on("mouseleave", () => { highlight(null); tip.style("display", "none"); });
+
+    layers.metros.selectAll("circle").data(circles, d => d.key).join("circle").attr("class", "metro")
+      .attr("cx", d => px(d)[0]).attr("cy", d => px(d)[1]).attr("r", d => radius(d.pop) / zoomK)
+      .attr("stroke", d => regionOf.get(d.key)?.color || GREY)
+      .on("mousemove", (e, d) => tooltip(e, d.full, `${d.pop.toLocaleString()} residents (${data.totals.year})<br>${regionOf.get(d.key)?.name || "Outside any megaregion"}`))
+      .on("mouseleave", () => tip.style("display", "none"));
+
+    const labels = layers.labels.selectAll("g.label").data(regions.map(r => {
+      const [[bx0, by0], [bx1, by1]] = path.bounds(r.geometry), side = LABEL_SIDE[r.members[0].name] || "n";
+      const at = { n: [(bx0 + bx1) / 2, by0], s: [(bx0 + bx1) / 2, by1], e: [bx1, (by0 + by1) / 2], w: [bx0, (by0 + by1) / 2] }[side];
+      return { ...r, at, side };
+    })).join("g").attr("class", "label").attr("transform", d => `translate(${d.at}) scale(${1 / zoomK})`).style("pointer-events", "none");
+    labels.selectAll("*").remove();
+    const pills = labels.append("g");
+    pills.append("rect");
+    pills.append("text").attr("fill", d => d.color).text(d => d.name.toUpperCase())
+      .append("tspan").attr("class", "pop").attr("x", 0).attr("dy", 12).text(d => fmtM(d.pop));
+    pills.each(function (d) {
+      const b = this.querySelector("text").getBBox(), w = b.width + 12, h = b.height + 6, gap = 5;
+      d3.select(this).select("rect").attr("x", b.x - 6).attr("y", b.y - 3).attr("width", w).attr("height", h).attr("rx", 5);
+      const mid = -(b.y + b.height / 2);  // shift that centres the pill vertically on the anchor
+      const shift = { n: [0, -(b.y + b.height) - 3 - gap], s: [0, -b.y + 3 + gap], e: [w / 2 + gap, mid], w: [-w / 2 - gap, mid] }[d.side];
+      d3.select(this).attr("transform", `translate(${shift})`);
+    });
+
+    const pop = d3.sum(regions, r => r.pop), area = d3.sum(regions, r => r.area_km2);
+    d3.select("#stats").html(`
+      <div class="stat"><b>${Math.round(pop / 1e6)}M</b><span>metro residents in ${regions.length} megaregions</span></div>
+      <div class="stat"><b>${fmtPct(pop / data.totals.pop)}</b><span>of the US + Canada population</span></div>
+      <div class="stat"><b>${fmtPct(area / data.totals.area_km2)}</b><span>of the land area</span></div>`);
+
+    const max = regions[0].pop;
+    d3.select("#bars").selectAll("div.bar").data(regions).join("div").attr("class", "bar")
+      .html(d => {
+        const more = d.members.length > 4 ? ` + ${d.members.length - 4} more` : "";
+        return `<div class="top"><span style="color:${d.color}">${d.name}</span><span>${fmtM(d.pop)}</span></div>
+          <div class="track" style="width:${d.pop / max * 100}%;background:${d.color}"></div>
+          <div class="sub">${d.members.slice(0, 4).map(m => m.name).join(", ")}${more} · ${d.countries.map(c => c.slice(0, 2)).join(" ")}</div>`;
+      })
+      .on("mouseenter", (e, d) => highlight(d.id)).on("mouseleave", () => highlight(null));
+
+    const m = data.method;
+    d3.select("#method").html(`
+      <p>A 1 km population grid (GHSL GHS-POP ${data.totals.year}) is smoothed with a ${m.sigma_km} km Gaussian. Cores are continuous areas above ${v.core} residents/km² whose metro areas total ${m.min_pop / 1e6}M+. Each megaregion extends from its core to the ${v.ext}/km² line; where two meet, the border follows the lowest-density divide.</p>
+      <p>A metro area belongs to a megaregion when at least half of its residents live inside it. Populations are whole metro areas: US Census CBSAs and Statistics Canada CMAs/CAs, ${data.totals.year} estimates. Land share is the area inside the megaregion boundaries (not the metro areas' own limits) against all US and Canadian territory outside major lakes (${(data.totals.area_km2 / 1e6).toFixed(1)}M km²). Alaska, Hawaii and the far north are off the map; Mexico is out of scope.</p>
+      <p>Sources: GHSL (JRC), US Census Bureau, Statistics Canada, Natural Earth. After a Europe map by @47Tolkien, itself modelled on America 2050.</p>`);
+  }
+}
+
+function tooltip(e, title, body) {
+  tip.style("display", "block").html(`<b>${title}</b><span>${body}</span>`)
+    .style("left", Math.min(e.clientX + 14, innerWidth - 300) + "px").style("top", e.clientY + 14 + "px");
+}
+
+function renderLegend(data) {
+  const ring = (r, color) => `<svg width="30" height="${2 * r + 4}"><circle cx="15" cy="${r + 2}" r="${r}" fill="#fff" stroke="${color}" stroke-width="2"/></svg>`;
+  const rows = SIZE_CLASSES.slice().reverse().map(([, r, text]) => [ring(r, GREY), text]);
+  rows.push([`<svg width="30" height="18"><rect width="30" height="18" rx="4" fill="#d1495b" fill-opacity=".34" stroke="#d1495b"/></svg>`, "Coloured area and ring: a megaregion and its metro areas"]);
+  rows.push([ring(5.5, GREY), `Grey ring: any other metro area of ${data.method.circle_min_pop.toLocaleString()}+`]);
+  rows.push([`<svg width="30" height="18"><rect width="30" height="18" rx="4" fill="var(--land)"/><circle cx="15" cy="9" r="6" fill="#fff"/></svg>`, `White glow: 1 km² cells with ${data.method.glow_min}+ residents`]);
+  d3.select("#legend").html(rows.map(([a, b]) => `<div>${a}</div><div>${b}</div>`).join(""));
+}
+</script>
+</body>
+</html>
