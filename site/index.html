@@ -239,7 +239,7 @@ function init(data) {
       <p>A 1 km population grid (GHSL GHS-POP ${data.totals.year}) is smoothed with a ${m.sigma_km} km Gaussian. Cores are continuous areas above ${v.core} residents/km² whose metro areas total ${m.min_pop / 1e6}M+. Each megaregion extends from its core to the ${v.ext}/km² line; where two meet, the border follows the lowest-density divide.</p>
       <p>A metro area belongs to a megaregion when at least half of its residents live inside it. Populations are whole metro areas: US Census CBSAs and Statistics Canada CMAs/CAs, ${data.totals.year} estimates. Land share is the area inside the megaregion boundaries (not the metro areas' own limits) against all US and Canadian territory outside major lakes (${(data.totals.area_km2 / 1e6).toFixed(1)}M km²). Alaska, Hawaii and the far north are off the map; Mexico is out of scope.</p>
       <p>Sources: GHS-POP R2023A © European Union (Joint Research Centre), <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>, reprojected, smoothed and thresholded here. US Census Bureau Vintage ${data.totals.year} estimates and 2023 CBSA boundaries. Adapted from Statistics Canada, table 17-10-0148-01 and 2021 Census boundary files, under the <a href="https://www.statcan.gc.ca/en/reference/licence">Statistics Canada Open Licence</a>; this does not constitute an endorsement by Statistics Canada. Basemap: Natural Earth.</p>
-      <p>After a Europe map by @47Tolkien, itself modelled on America 2050.</p>`);
+      <p>After a Europe map by @47Tolkien, itself modelled on America 2050. <a href="https://github.com/YichiZ/mega-regions-na">Source on GitHub</a>.</p>`);
   }
 }
 
